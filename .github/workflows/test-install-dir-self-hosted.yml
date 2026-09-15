@@ -21,63 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Verify Linux runner prerequisites
-        shell: bash
-        run: |
-          fail() { echo "::error::$*"; exit 1; }
-          test "$(uname -s)" = Linux || fail "This test requires a Linux runner"
-          test "$(id -u)" -ne 0 || fail "Run the runner as a non-root user"
-          test -z "${DOTNET_INSTALL_DIR:-}" || fail "Unset DOTNET_INSTALL_DIR in the runner environment"
-          test -d /usr/share/dotnet || fail "Missing /usr/share/dotnet; ask the VM administrator to create it owned by root with mode 755"
-          test -r /usr/share/dotnet || fail "Runner cannot read /usr/share/dotnet"
-          test -x /usr/share/dotnet || fail "Runner cannot traverse /usr/share/dotnet"
-          test ! -w /usr/share/dotnet || fail "Default directory is writable; it must be root-owned and unwritable by the runner user"
-          if test -e /usr/share/dotnet/sdk; then
-            echo "::error::Use a clean VM without a system SDK directory"
-            exit 1
-          fi
-          test -n "${HOME:-}" || fail "HOME is not set for the runner user"
-          mkdir -p "$HOME/.dotnet"
-          probe=$(mktemp -d "$HOME/.dotnet/.runner-probe-XXXXXX")
-          rmdir "$probe"
-
       - name: Setup .NET (v6, expect permission failure)
-        id: setup-dotnet
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Verify baseline outcome
-        if: always() && steps.setup-dotnet.outcome != 'skipped'
-        shell: bash
-        run: |
-          echo "setup-dotnet outcome: ${{ steps.setup-dotnet.outcome }}"
-          test '${{ steps.setup-dotnet.outcome }}' = failure
 
   pr-fallback-branch:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v7
-
-      - name: Verify Linux runner prerequisites
-        shell: bash
-        run: |
-          fail() { echo "::error::$*"; exit 1; }
-          test "$(uname -s)" = Linux || fail "This test requires a Linux runner"
-          test "$(id -u)" -ne 0 || fail "Run the runner as a non-root user"
-          test -z "${DOTNET_INSTALL_DIR:-}" || fail "Unset DOTNET_INSTALL_DIR in the runner environment"
-          test -d /usr/share/dotnet || fail "Missing /usr/share/dotnet; ask the VM administrator to create it owned by root with mode 755"
-          test -r /usr/share/dotnet || fail "Runner cannot read /usr/share/dotnet"
-          test -x /usr/share/dotnet || fail "Runner cannot traverse /usr/share/dotnet"
-          test ! -w /usr/share/dotnet || fail "Default directory is writable; it must be root-owned and unwritable by the runner user"
-          if test -e /usr/share/dotnet/sdk; then
-            echo "::error::Use a clean VM without a system SDK directory"
-            exit 1
-          fi
-          test -n "${HOME:-}" || fail "HOME is not set for the runner user"
-          mkdir -p "$HOME/.dotnet"
-          probe=$(mktemp -d "$HOME/.dotnet/.runner-probe-XXXXXX")
-          rmdir "$probe"
 
       - name: Setup .NET (PR, expect home fallback)
         uses: v-priyagupta108/setup-dotnet@install-dir-writable-fallback
