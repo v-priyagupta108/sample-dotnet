@@ -1,0 +1,111 @@
+name: "Install-dir fallback: Windows missing home install directory"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dotnet-version:
+        description: '.NET version to install'
+        required: false
+        default: '8.0.x'
+
+permissions:
+  contents: read
+
+jobs:
+  missing-fallback:
+    name: Windows missing fallback (${{ matrix.variant }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline-v6, pr-fallback-branch]
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Deny write access to the default directory
+        run: |
+          if ($env:DOTNET_INSTALL_DIR) {
+            throw "DOTNET_INSTALL_DIR must be unset for this test"
+          }
+          $default = Join-Path $env:ProgramFiles 'dotnet'
+          New-Item -ItemType Directory -Force -Path $default | Out-Null
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $default /deny "*${sid}:(OI)(CI)W"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to deny write access" }
+          $probe = Join-Path $default ([guid]::NewGuid().ToString())
+          $denied = $false
+          try {
+            [System.IO.Directory]::CreateDirectory($probe) | Out-Null
+          } catch [System.UnauthorizedAccessException] {
+            $denied = $true
+          }
+          if (-not $denied) {
+            Remove-Item -LiteralPath $probe -Force
+            throw "Default directory is still writable"
+          }
+
+      - name: Ensure fallback directory is absent
+        run: |
+          $homePath = node -p "require('os').homedir()"
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve the home directory" }
+          if ($homePath -ne $env:USERPROFILE) {
+            throw "Unexpected home directory: $homePath"
+          }
+          $fallback = Join-Path $homePath '.dotnet'
+          if (Test-Path -LiteralPath $fallback) {
+            Remove-Item -LiteralPath $fallback -Recurse -Force
+          }
+          if (Test-Path -LiteralPath $fallback) {
+            throw "Fallback directory still exists"
+          }
+          Write-Host "Confirmed absent before setup: $fallback"
+
+      - name: Setup .NET (v6, expect permission failure)
+        if: matrix.variant == 'baseline-v6'
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ inputs.dotnet-version || '8.0.x' }}
+
+      - name: Setup .NET (PR, expect fallback creation)
+        if: matrix.variant == 'pr-fallback-branch'
+        id: setup-pr
+        uses: v-priyagupta108/setup-dotnet@install-dir-writable-fallback
+        with:
+          dotnet-version: ${{ inputs.dotnet-version || '8.0.x' }}
+
+      - name: Verify newly created fallback and SDK
+        if: matrix.variant == 'pr-fallback-branch'
+        env:
+          EXPECTED_SDK: ${{ steps.setup-pr.outputs.dotnet-version }}
+        run: |
+          $expected = Join-Path $env:USERPROFILE '.dotnet'
+          Write-Host "DOTNET_ROOT=$env:DOTNET_ROOT"
+          if ($env:DOTNET_ROOT -ne $expected) {
+            throw "Expected fallback $expected, got $env:DOTNET_ROOT"
+          }
+          $executable = Join-Path $expected 'dotnet.exe'
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "Fallback executable was not created"
+          }
+          if ((Get-Command dotnet).Source -ne $executable) {
+            throw "PATH does not select the fallback executable"
+          }
+          $sdks = & $executable --list-sdks
+          if ($LASTEXITCODE -ne 0) { throw "Fallback dotnet failed" }
+          Write-Host ($sdks -join "`n")
+          if (-not $env:EXPECTED_SDK) { throw "Action did not report an SDK version" }
+          $pattern = '^' + [regex]::Escape($env:EXPECTED_SDK) + '\s'
+          if (-not ($sdks -match $pattern)) {
+            throw "Requested SDK was not installed in the fallback directory"
+          }
+
+      - name: Restore default directory permissions
+        if: always()
+        run: |
+          $default = Join-Path $env:ProgramFiles 'dotnet'
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $default /remove:d "*$sid"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to restore write access" }
