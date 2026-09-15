@@ -52,8 +52,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "C:\Program Files\dotnet" | Out-Null
-          icacls "C:\Program Files\dotnet" /inheritance:r
-          icacls "C:\Program Files\dotnet" /deny "$env:USERNAME`:(OI)(CI)W"
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls "C:\Program Files\dotnet" /deny "*${sid}:(OI)(CI)W"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to deny write access" }
+          $probe = Join-Path "C:\Program Files\dotnet" ([guid]::NewGuid().ToString())
+          $denied = $false
+          try {
+            [System.IO.Directory]::CreateDirectory($probe) | Out-Null
+          } catch [System.UnauthorizedAccessException] {
+            $denied = $true
+          }
+          if (-not $denied) {
+            Remove-Item -LiteralPath $probe -Force
+            throw "Default directory is still writable"
+          }
 
       - name: Setup .NET (actions/setup-dotnet@v6, expect permission failure)
         id: setup-dotnet
@@ -62,7 +74,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Report outcome
-        if: always()
+        if: always() && steps.setup-dotnet.outcome != 'skipped'
         shell: pwsh
         run: |
           Write-Host "setup-dotnet outcome: ${{ steps.setup-dotnet.outcome }}"
@@ -74,7 +86,10 @@ jobs:
       - name: Restore permissions on C:\Program Files\dotnet
         if: always()
         shell: pwsh
-        run: icacls "C:\Program Files\dotnet" /remove:d "$env:USERNAME"
+        run: |
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls "C:\Program Files\dotnet" /remove:d "*$sid"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to restore write access" }
 
   # macOS's default install dir is already $HOME/.dotnet, so making it
   # unwritable has no other fallback to try; just observe what happens.
@@ -136,8 +151,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "C:\Program Files\dotnet" | Out-Null
-          icacls "C:\Program Files\dotnet" /inheritance:r
-          icacls "C:\Program Files\dotnet" /deny "$env:USERNAME`:(OI)(CI)W"
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls "C:\Program Files\dotnet" /deny "*${sid}:(OI)(CI)W"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to deny write access" }
+          $probe = Join-Path "C:\Program Files\dotnet" ([guid]::NewGuid().ToString())
+          $denied = $false
+          try {
+            [System.IO.Directory]::CreateDirectory($probe) | Out-Null
+          } catch [System.UnauthorizedAccessException] {
+            $denied = $true
+          }
+          if (-not $denied) {
+            Remove-Item -LiteralPath $probe -Force
+            throw "Default directory is still writable"
+          }
 
       - name: Setup .NET (expect fallback to %USERPROFILE%\.dotnet)
         uses: v-priyagupta108/setup-dotnet@install-dir-writable-fallback
@@ -145,7 +172,6 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Verify fallback was used
-        if: always()
         shell: pwsh
         run: |
           Write-Host "DOTNET_ROOT=$env:DOTNET_ROOT"
@@ -159,4 +185,7 @@ jobs:
       - name: Restore permissions on C:\Program Files\dotnet
         if: always()
         shell: pwsh
-        run: icacls "C:\Program Files\dotnet" /remove:d "$env:USERNAME"
+        run: |
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls "C:\Program Files\dotnet" /remove:d "*$sid"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to restore write access" }
