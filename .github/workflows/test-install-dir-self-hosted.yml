@@ -24,18 +24,19 @@ jobs:
       - name: Verify Linux runner prerequisites
         shell: bash
         run: |
-          test "$(uname -s)" = Linux
-          test "$(id -u)" -ne 0
-          test -z "${DOTNET_INSTALL_DIR:-}"
-          test -d /usr/share/dotnet
-          test -r /usr/share/dotnet
-          test -x /usr/share/dotnet
-          test ! -w /usr/share/dotnet
+          fail() { echo "::error::$*"; exit 1; }
+          test "$(uname -s)" = Linux || fail "This test requires a Linux runner"
+          test "$(id -u)" -ne 0 || fail "Run the runner as a non-root user"
+          test -z "${DOTNET_INSTALL_DIR:-}" || fail "Unset DOTNET_INSTALL_DIR in the runner environment"
+          test -d /usr/share/dotnet || fail "Missing /usr/share/dotnet; ask the VM administrator to create it owned by root with mode 755"
+          test -r /usr/share/dotnet || fail "Runner cannot read /usr/share/dotnet"
+          test -x /usr/share/dotnet || fail "Runner cannot traverse /usr/share/dotnet"
+          test ! -w /usr/share/dotnet || fail "Default directory is writable; it must be root-owned and unwritable by the runner user"
           if test -e /usr/share/dotnet/sdk; then
             echo "::error::Use a clean VM without a system SDK directory"
             exit 1
           fi
-          test -n "$HOME"
+          test -n "${HOME:-}" || fail "HOME is not set for the runner user"
           mkdir -p "$HOME/.dotnet"
           probe=$(mktemp -d "$HOME/.dotnet/.runner-probe-XXXXXX")
           rmdir "$probe"
@@ -61,18 +62,19 @@ jobs:
       - name: Verify Linux runner prerequisites
         shell: bash
         run: |
-          test "$(uname -s)" = Linux
-          test "$(id -u)" -ne 0
-          test -z "${DOTNET_INSTALL_DIR:-}"
-          test -d /usr/share/dotnet
-          test -r /usr/share/dotnet
-          test -x /usr/share/dotnet
-          test ! -w /usr/share/dotnet
+          fail() { echo "::error::$*"; exit 1; }
+          test "$(uname -s)" = Linux || fail "This test requires a Linux runner"
+          test "$(id -u)" -ne 0 || fail "Run the runner as a non-root user"
+          test -z "${DOTNET_INSTALL_DIR:-}" || fail "Unset DOTNET_INSTALL_DIR in the runner environment"
+          test -d /usr/share/dotnet || fail "Missing /usr/share/dotnet; ask the VM administrator to create it owned by root with mode 755"
+          test -r /usr/share/dotnet || fail "Runner cannot read /usr/share/dotnet"
+          test -x /usr/share/dotnet || fail "Runner cannot traverse /usr/share/dotnet"
+          test ! -w /usr/share/dotnet || fail "Default directory is writable; it must be root-owned and unwritable by the runner user"
           if test -e /usr/share/dotnet/sdk; then
             echo "::error::Use a clean VM without a system SDK directory"
             exit 1
           fi
-          test -n "$HOME"
+          test -n "${HOME:-}" || fail "HOME is not set for the runner user"
           mkdir -p "$HOME/.dotnet"
           probe=$(mktemp -d "$HOME/.dotnet/.runner-probe-XXXXXX")
           rmdir "$probe"
