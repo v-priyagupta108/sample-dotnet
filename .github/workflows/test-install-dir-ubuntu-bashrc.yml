@@ -1,0 +1,32 @@
+name: "Install-dir: Ubuntu 24.04 /usr/lib/dotnet override"
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_INSTALL_DIR: /usr/lib/dotnet
+
+jobs:
+  baseline-v6:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET (v6)
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+  pr-fallback-branch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET (PR)
+        uses: v-priyagupta108/setup-dotnet@install-dir-writable-fallback
+        with:
+          dotnet-version: '8.0.x'
