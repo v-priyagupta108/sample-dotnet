@@ -7,8 +7,8 @@ on:
 permissions:
   contents: read
 
-env:
-  DOTNET_INSTALL_DIR: /usr/lib/dotnet
+# env:
+#   DOTNET_INSTALL_DIR: /usr/lib/dotnet
 
 jobs:
   baseline-v6:

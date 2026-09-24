@@ -10,36 +10,49 @@ permissions:
 jobs:
   no-usable-home:
     name: Root HOME (${{ matrix.variant }})
-    runs-on: ubuntu-24.04
-    container:
-      image: mcr.microsoft.com/dotnet/sdk:8.0-noble
-      options: --user 1001:1001
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         variant: [baseline-v6, pr-fallback-branch]
     env:
-      HOME: '/'
       DOTNET_INSTALL_DIR: ''
-      DOTNET_VERSION: '9.0.100'
+      DOTNET_VERSION: '8.0.x'
     steps:
       - uses: actions/checkout@v7
 
-      - name: Show runner environment
+      - name: Remove dotnet entirely, deny creation in parent
         shell: bash
         run: |
-          id
-          echo "HOME=$HOME"
-          ls -ld /usr/share/dotnet
+          stat -c '%a' /usr/share > "$RUNNER_TEMP/dotnet-parent-mode"
+          sudo rm -rf /usr/share/dotnet
+          sudo chmod a-w /usr/share
+          ls -ld /usr/share
+          if mkdir /usr/share/dotnet; then
+            echo "::error::Runner can still create the default directory"
+            exit 1
+          fi
 
       - name: Setup .NET (v6, expect permission failure)
         if: matrix.variant == 'baseline-v6'
         uses: actions/setup-dotnet@v6
+        env:
+          HOME: /
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup .NET (PR, inspect missing-home warning)
         if: matrix.variant == 'pr-fallback-branch'
         uses: v-priyagupta108/setup-dotnet@install-dir-writable-fallback
+        env:
+          HOME: /
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore parent directory permissions
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/dotnet-parent-mode" ]; then
+            sudo chmod "$(cat "$RUNNER_TEMP/dotnet-parent-mode")" /usr/share
+          fi
