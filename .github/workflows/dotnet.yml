@@ -17,6 +17,27 @@ jobs:
           Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile dotnet-install.ps1
           ./dotnet-install.ps1 -Channel ${{ matrix.version }} -Quality preview `
             -InstallDir "${{ matrix.drive }}" -SkipNonVersionedFiles -NoPath -Verbose
+      - name: curl download timing (same archive)
+        shell: pwsh
+        run: |
+          $ext = '${{ matrix.version == '11.0' && 'tar.gz' || 'zip' }}'
+          $url = "https://aka.ms/dotnet/${{ matrix.version }}/preview/dotnet-sdk-win-x64.$ext"
+          # NUL = network only; C:\Temp = where dotnet-install.ps1 writes its archive; D: = fast disk
+          $targets = [ordered]@{ 'network-only' = 'NUL'; 'C:-temp' = "$env:TEMP\sdk-curl.$ext"; 'D:' = "D:\sdk-curl.$ext" }
+          foreach ($name in $targets.Keys) {
+            $dest = $targets[$name]
+            $out = curl.exe -sSL -o $dest -w '%{time_total} %{size_download}' $url
+            $secs, $bytes = $out -split ' '
+            '{0,-13} {1,6:N2}s  {2,7:N1} MB/s' -f "curl $name", [double]$secs, ([double]$bytes / 1MB / [double]$secs)
+            if ($dest -ne 'NUL') { Remove-Item $dest }
+          }
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $client = [System.Net.Http.HttpClient]::new()
+          $resp = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+          $file = [System.IO.File]::Create("$env:TEMP\sdk-httpclient.$ext")
+          $resp.Content.ReadAsStreamAsync().Result.CopyTo($file); $file.Close()
+          '{0,-13} {1,6:N2}s  (same code path as dotnet-install.ps1, to C:-temp)' -f 'HttpClient', $sw.Elapsed.TotalSeconds
+          Remove-Item "$env:TEMP\sdk-httpclient.$ext"
   ubuntu-baseline:
     runs-on: ubuntu-latest
     strategy:
@@ -27,7 +48,12 @@ jobs:
           curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
           bash dotnet-install.sh --channel ${{ matrix.version }} --quality preview \
             --install-dir "$HOME/dotnet" --skip-non-versioned-files --no-path --verbose
-            
+      - name: curl download timing (same Windows archive, network baseline)
+        run: |
+          ext=${{ matrix.version == '11.0' && 'tar.gz' || 'zip' }}
+          url="https://aka.ms/dotnet/${{ matrix.version }}/preview/dotnet-sdk-win-x64.$ext"
+          curl -sSL -o /dev/null -w 'curl network-only %{time_total}s  %{speed_download} B/s\n' "$url"
+
             # name: .NET MAUI
 
 # on:
